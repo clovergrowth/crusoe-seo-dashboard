@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crusoe SEO Dashboard — Screaming Frog</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --lime: #CEEB13;
+    --lime-dim: #a8c40f;
+    --black: #0a0a0a;
+    --card: #111111;
+    --card2: #181818;
+    --border: #2a2a2a;
+    --text: #ffffff;
+    --muted: #888888;
+    --red: #ff4757;
+    --blue: #4fc3f7;
+    --orange: #ff9800;
+    --green: #69f0ae;
+    --purple: #ce93d8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--black); color: var(--text); font-family: 'Inter', Arial, sans-serif; min-height: 100vh; }
+
+  /* Header */
+  .header { display: flex; align-items: center; justify-content: space-between; padding: 18px 32px; border-bottom: 1px solid var(--border); background: #000; }
+  .header-brand { display: flex; align-items: center; gap: 14px; }
+  .header-logo { width: 32px; height: 32px; background: var(--lime); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: 900; color: #000; font-size: 14px; letter-spacing: -0.5px; }
+  .header-title { font-size: 15px; font-weight: 600; letter-spacing: -0.3px; }
+  .header-sub { font-size: 12px; color: var(--muted); margin-top: 1px; }
+  .header-badge { background: var(--lime); color: #000; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 20px; }
+
+  /* Tabs */
+  .tabs-bar { display: flex; gap: 2px; padding: 0 32px; background: #000; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
+  .tabs-bar::-webkit-scrollbar { display: none; }
+  .tab-btn { padding: 13px 16px; font-size: 12px; font-weight: 500; color: var(--muted); background: none; border: none; cursor: pointer; white-space: nowrap; border-bottom: 2px solid transparent; transition: all 0.15s; }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--lime); border-bottom-color: var(--lime); }
+
+  /* Content */
+  .content { padding: 28px 32px; max-width: 1400px; margin: 0 auto; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* Loading */
+  .loading { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 300px; gap: 16px; }
+  .spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--lime); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Scorecards */
+  .scorecards { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 28px; }
+  .scorecard { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; }
+  .scorecard-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 8px; }
+  .scorecard-value { font-size: 28px; font-weight: 700; letter-spacing: -1px; }
+  .scorecard-value.lime { color: var(--lime); }
+  .scorecard-value.red { color: var(--red); }
+  .scorecard-value.blue { color: var(--blue); }
+  .scorecard-value.orange { color: var(--orange); }
+  .scorecard-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  /* Charts */
+  .charts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 16px; margin-bottom: 28px; }
+  .chart-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
+  .chart-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 16px; }
+  .chart-wrap { position: relative; height: 220px; }
+  .chart-wrap.tall { height: 280px; }
+
+  /* Table */
+  .table-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 16px; }
+  .table-header { padding: 14px 20px; border-bottom: 1px solid var(--border); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); display: flex; justify-content: space-between; align-items: center; }
+  .table-search { background: var(--card2); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; color: var(--text); font-size: 12px; width: 240px; outline: none; }
+  .table-search::placeholder { color: var(--muted); }
+  .table-wrap { overflow-x: auto; max-height: 420px; overflow-y: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { background: var(--card2); color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; padding: 10px 14px; text-align: left; position: sticky; top: 0; z-index: 1; white-space: nowrap; }
+  td { padding: 9px 14px; border-top: 1px solid var(--border); color: var(--text); max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  tr:hover td { background: rgba(206, 235, 19, 0.04); }
+
+  /* Badges */
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+  .badge-green { background: rgba(105, 240, 174, 0.15); color: var(--green); }
+  .badge-red { background: rgba(255, 71, 87, 0.15); color: var(--red); }
+  .badge-orange { background: rgba(255, 152, 0, 0.15); color: var(--orange); }
+  .badge-blue { background: rgba(79, 195, 247, 0.15); color: var(--blue); }
+  .badge-muted { background: rgba(136, 136, 136, 0.15); color: var(--muted); }
+
+  /* Section header */
+  .section-head { margin-bottom: 20px; }
+  .section-head h2 { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 4px; }
+  .section-head p { font-size: 13px; color: var(--muted); }
+
+  /* Divider */
+  .divider { height: 1px; background: var(--border); margin: 24px 0; }
+
+  .full-chart { grid-column: 1 / -1; }
+
+  .note { background: var(--card2); border: 1px solid var(--border); border-left: 3px solid var(--lime); border-radius: 8px; padding: 12px 16px; font-size: 12px; color: var(--muted); margin-bottom: 20px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-brand">
+    <div class="header-logo">C</div>
+    <div>
+      <div class="header-title">Crusoe — SEO Crawl Dashboard</div>
+      <div class="header-sub">Screaming Frog · crusoe.ai · <span id="crawl-date-display">Loading…</span></div>
+    </div>
+  </div>
+  <div class="header-badge">Live · Airtable</div>
+</div>
+
+<div class="tabs-bar">
+  <button class="tab-btn active" data-tab="summary">🏠 Summary</button>
+  <button class="tab-btn" data-tab="response-codes">🔗 Response Codes</button>
+  <button class="tab-btn" data-tab="url-types">🔗 URL Types</button>
+  <button class="tab-btn" data-tab="indexability">🚫 Indexability</button>
+  <button class="tab-btn" data-tab="site-structure">🏗️ Site Structure</button>
+  <button class="tab-btn" data-tab="on-page">📄 On-Page</button>
+  <button class="tab-btn" data-tab="content-issues">📕 Content Issues</button>
+  <button class="tab-btn" data-tab="structured-data">💻 Structured Data</button>
+  <button class="tab-btn" data-tab="security">🔒 Security</button>
+  <button class="tab-btn" data-tab="sitemaps">🗺️ Sitemaps</button>
+</div>
+
+<div class="content">
+  <div id="global-loading" class="loading">
+    <div class="spinner"></div>
+    <div style="color:var(--muted);font-size:13px;">Fetching crawl data from Airtable…</div>
+  </div>
+
+  <!-- SUMMARY -->
+  <div class="tab-panel" id="panel-summary">
+    <div class="section-head"><h2>Summary</h2><p>Top-level overview from the latest Screaming Frog crawl</p></div>
+    <div class="scorecards" id="summary-scorecards"></div>
+    <div class="charts-grid" id="summary-charts"></div>
+  </div>
+
+  <!-- RESPONSE CODES -->
+  <div class="tab-panel" id="panel-response-codes">
+    <div class="section-head"><h2>Response Codes</h2><p>HTTP status code distribution across all crawled URLs</p></div>
+    <div class="charts-grid" id="rc-charts"></div>
+    <div class="table-card">
+      <div class="table-header">All URLs <input class="table-search" id="rc-search" placeholder="Filter URLs…" oninput="filterTable('rc-table', this.value)"></div>
+      <div class="table-wrap"><table id="rc-table"></table></div>
+    </div>
+  </div>
+
+  <!-- URL TYPES -->
+  <div class="tab-panel" id="panel-url-types">
+    <div class="section-head"><h2>URL Types</h2><p>Resource type breakdown across all internal URLs</p></div>
+    <div class="charts-grid" id="ut-charts"></div>
+  </div>
+
+  <!-- INDEXABILITY -->
+  <div class="tab-panel" id="panel-indexability">
+    <div class="section-head"><h2>Indexability</h2><p>Indexable vs non-indexable URLs and reasons</p></div>
+    <div class="charts-grid" id="idx-charts"></div>
+    <div class="table-card">
+      <div class="table-header">Non-Indexable URLs <input class="table-search" id="idx-search" placeholder="Filter…" oninput="filterTable('idx-table', this.value)"></div>
+      <div class="table-wrap"><table id="idx-table"></table></div>
+    </div>
+  </div>
+
+  <!-- SITE STRUCTURE -->
+  <div class="tab-panel" id="panel-site-structure">
+    <div class="section-head"><h2>Site Structure</h2><p>Crawl depth distribution and most-linked pages</p></div>
+    <div class="charts-grid" id="ss-charts"></div>
+    <div class="table-card">
+      <div class="table-header">Top 20 Most Linked Pages</div>
+      <div class="table-wrap"><table id="ss-table"></table></div>
+    </div>
+  </div>
+
+  <!-- ON-PAGE -->
+  <div class="tab-panel" id="panel-on-page">
+    <div class="section-head"><h2>On-Page Elements</h2><p>Titles, meta descriptions, and H1 tag health</p></div>
+    <div class="scorecards" id="op-scorecards"></div>
+    <div class="charts-grid" id="op-charts"></div>
+    <div class="table-card">
+      <div class="table-header">Page Titles <input class="table-search" id="pt-search" placeholder="Filter…" oninput="filterTable('pt-table', this.value)"></div>
+      <div class="table-wrap"><table id="pt-table"></table></div>
+    </div>
+    <div class="table-card" style="margin-top:16px">
+      <div class="table-header">Meta Descriptions <input class="table-search" id="md-search" placeholder="Filter…" oninput="filterTable('md-table', this.value)"></div>
+      <div class="table-wrap"><table id="md-table"></table></div>
+    </div>
+    <div class="table-card" style="margin-top:16px">
+      <div class="table-header">H1 Tags <input class="table-search" id="h1-search" placeholder="Filter…" oninput="filterTable('h1-table', this.value)"></div>
+      <div class="table-wrap"><table id="h1-table"></table></div>
+    </div>
+  </div>
+
+  <!-- CONTENT ISSUES -->
+  <div class="tab-panel" id="panel-content-issues">
+    <div class="section-head"><h2>Content Issues</h2><p>Near-duplicates, spelling and grammar errors</p></div>
+    <div class="scorecards" id="ci-scorecards"></div>
+    <div class="charts-grid" id="ci-charts"></div>
+    <div class="table-card">
+      <div class="table-header">Near Duplicates</div>
+      <div class="table-wrap"><table id="ci-table"></table></div>
+    </div>
+  </div>
+
+  <!-- STRUCTURED DATA -->
+  <div class="tab-panel" id="panel-structured-data">
+    <div class="section-head"><h2>Structured Data</h2><p>JSON-LD, RDFa, and Microdata presence and validation</p></div>
+    <div class="scorecards" id="sd-scorecards"></div>
+    <div class="charts-grid" id="sd-charts"></div>
+    <div class="table-card">
+      <div class="table-header">Structured Data Detail <input class="table-search" id="sd-search" placeholder="Filter…" oninput="filterTable('sd-table', this.value)"></div>
+      <div class="table-wrap"><table id="sd-table"></table></div>
+    </div>
+  </div>
+
+  <!-- SECURITY -->
+  <div class="tab-panel" id="panel-security">
+    <div class="section-head"><h2>Security</h2><p>HTTPS vs HTTP and protocol analysis</p></div>
+    <div class="charts-grid" id="sec-charts"></div>
+    <div class="table-card">
+      <div class="table-header">HTTP URLs (Security Risk) <input class="table-search" id="sec-search" placeholder="Filter…" oninput="filterTable('sec-table', this.value)"></div>
+      <div class="table-wrap"><table id="sec-table"></table></div>
+    </div>
+  </div>
+
+  <!-- SITEMAPS -->
+  <div class="tab-panel" id="panel-sitemaps">
+    <div class="section-head"><h2>Sitemaps</h2><p>URLs found in XML sitemaps and their crawl status</p></div>
+    <div class="scorecards" id="sm-scorecards"></div>
+    <div class="charts-grid" id="sm-charts"></div>
+    <div class="table-card">
+      <div class="table-header">Sitemap URLs <input class="table-search" id="sm-search" placeholder="Filter…" oninput="filterTable('sm-table', this.value)"></div>
+      <div class="table-wrap"><table id="sm-table"></table></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Token stored in localStorage — never committed to source
+let AT_TOKEN = localStorage.getItem('at_token') || '';
+let BASE_ID  = localStorage.getItem('at_base')  || '';
+
+if (!AT_TOKEN || !BASE_ID) {
+  const tok  = prompt('Airtable Personal Access Token:');
+  const base = prompt('Airtable Base ID (appXXXXXXXX):');
+  if (!tok || !base) { document.body.innerHTML = '<div style="color:#ff4757;padding:40px;font-family:Arial">Token required to load dashboard.</div>'; throw new Error('No token'); }
+  localStorage.setItem('at_token', tok);
+  localStorage.setItem('at_base', base);
+  AT_TOKEN = tok; BASE_ID = base;
+}
+const TABLES = {
+  internal: 'tbl89Uy9Zw01WSEp5',
+  responseCodes: 'tbl8oxV9vmoUu9BDx',
+  pageTitles: 'tblfmBfQAJvcygJEm',
+  metaDesc: 'tblAK5jBpYiyOQTKN',
+  h1: 'tblKQc0YH5X9HJAiX',
+  h2: 'tblKwO2VN8jsSnPSk',
+  canonicals: 'tblr3wd0ZzDI8LycI',
+  directives: 'tbluEkl1Ag8fm99KM',
+  structuredData: 'tblnkZo8V8oB14BJJ',
+  images: 'tblHJ3pmZIbYRKEAD',
+  sitemaps: 'tbl21K2utotOWIFtx'
+};
+
+const LIME = '#CEEB13';
+const RED = '#ff4757';
+const BLUE = '#4fc3f7';
+const ORANGE = '#ff9800';
+const GREEN = '#69f0ae';
+const PURPLE = '#ce93d8';
+const MUTED = '#555';
+
+Chart.defaults.color = '#888';
+Chart.defaults.borderColor = '#2a2a2a';
+Chart.defaults.font.family = 'Inter, Arial, sans-serif';
+
+async function fetchAll(tableId) {
+  let records = [], offset = null;
+  do {
+    const url = `https://api.airtable.com/v0/${BASE_ID}/${tableId}?pageSize=100${offset ? '&offset=' + offset : ''}`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${AT_TOKEN}` } });
+    const data = await res.json();
+    records = records.concat(data.records.map(r => r.fields));
+    offset = data.offset || null;
+  } while (offset);
+  return records;
+}
+
+function makeChart(canvasId, config) {
+  const ctx = document.getElementById(canvasId)?.getContext('2d');
+  if (!ctx) return;
+  return new Chart(ctx, config);
+}
+
+function scorecard(label, value, color = '', sub = '') {
+  return `<div class="scorecard">
+    <div class="scorecard-label">${label}</div>
+    <div class="scorecard-value ${color}">${value}</div>
+    ${sub ? `<div class="scorecard-sub">${sub}</div>` : ''}
+  </div>`;
+}
+
+function chartCard(id, title, tall = false) {
+  return `<div class="chart-card">
+    <div class="chart-title">${title}</div>
+    <div class="chart-wrap${tall ? ' tall' : ''}"><canvas id="${id}"></canvas></div>
+  </div>`;
+}
+
+function badge(text, type) {
+  return `<span class="badge badge-${type}">${text}</span>`;
+}
+
+function filterTable(tableId, query) {
+  const rows = document.querySelectorAll(`#${tableId} tbody tr`);
+  const q = query.toLowerCase();
+  rows.forEach(r => { r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none'; });
+}
+
+function buildTable(tableEl, headers, rows, renderRow) {
+  tableEl.innerHTML = `<thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(renderRow).join('')}</tbody>`;
+}
+
+function statusBadge(code) {
+  if (!code) return badge('N/A', 'muted');
+  if (code >= 500) return badge(code, 'red');
+  if (code >= 400) return badge(code, 'orange');
+  if (code >= 300) return badge(code, 'blue');
+  if (code >= 200) return badge(code, 'green');
+  return badge(code, 'muted');
+}
+
+function pct(n, total) { return total ? ((n / total) * 100).toFixed(1) + '%' : '0%'; }
+function fmt(n) { return n?.toLocaleString() ?? '0'; }
+
+function countBy(records, field) {
+  const map = {};
+  records.forEach(r => { const v = r[field] || 'Unknown'; map[v] = (map[v] || 0) + 1; });
+  return map;
+}
+
+// Tab switching
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ── Main init ──
+async function init() {
+  const [internal, pageTitles, metaDesc, h1, structuredData, sitemaps] = await Promise.all([
+    fetchAll(TABLES.internal),
+    fetchAll(TABLES.pageTitles),
+    fetchAll(TABLES.metaDesc),
+    fetchAll(TABLES.h1),
+    fetchAll(TABLES.structuredData),
+    fetchAll(TABLES.sitemaps)
+  ]);
+
+  document.getElementById('global-loading').style.display = 'none';
+  document.querySelectorAll('.tab-panel').forEach(p => { if(p.id === 'panel-summary') p.classList.add('active'); });
+
+  const crawlDate = internal[0]?.['Crawl Date'] || '2026-05-05';
+  document.getElementById('crawl-date-display').textContent = crawlDate;
+
+  // ── Derived data ──
+  const htmlUrls = internal.filter(r => (r['Content Type'] || '').includes('text/html'));
+  const status2xx = internal.filter(r => r['Status Code'] >= 200 && r['Status Code'] < 300).length;
+  const status3xx = internal.filter(r => r['Status Code'] >= 300 && r['Status Code'] < 400).length;
+  const status4xx = internal.filter(r => r['Status Code'] >= 400 && r['Status Code'] < 500).length;
+  const status5xx = internal.filter(r => r['Status Code'] >= 500).length;
+  const indexable = internal.filter(r => r['Indexability'] === 'Indexable').length;
+  const nonIndex  = internal.filter(r => r['Indexability'] === 'Non-Indexable').length;
+  const total = internal.length;
+
+  // ── SUMMARY ──
+  document.getElementById('summary-scorecards').innerHTML = [
+    scorecard('Total URLs', fmt(total), 'lime', 'All internal resources'),
+    scorecard('Internal HTML', fmt(htmlUrls.filter(r=>r['Status Code']===200).length), '', '200 OK HTML pages'),
+    scorecard('2xx Success', fmt(status2xx), 'blue', pct(status2xx, total) + ' of total'),
+    scorecard('3xx Redirects', fmt(status3xx), 'orange', pct(status3xx, total) + ' of total'),
+    scorecard('4xx Errors', fmt(status4xx), 'red', pct(status4xx, total) + ' of total'),
+    scorecard('5xx Errors', fmt(status5xx), status5xx > 0 ? 'red' : '', pct(status5xx, total) + ' of total'),
+    scorecard('Indexable', fmt(indexable), 'lime', pct(indexable, total) + ' of HTML'),
+    scorecard('Non-Indexable', fmt(nonIndex), nonIndex > 0 ? 'orange' : '', pct(nonIndex, total) + ' of HTML'),
+  ].join('');
+
+  document.getElementById('summary-charts').innerHTML = [
+    chartCard('chart-status-dist', 'Status Code Distribution'),
+    chartCard('chart-indexability', 'Indexability'),
+    chartCard('chart-content-types', 'Content Types'),
+    chartCard('chart-crawl-depth', 'Crawl Depth Distribution', true),
+  ].join('');
+
+  // Status pie
+  makeChart('chart-status-dist', { type: 'doughnut', data: {
+    labels: ['2xx Success', '3xx Redirect', '4xx Error', '5xx Error'],
+    datasets: [{ data: [status2xx, status3xx, status4xx, status5xx], backgroundColor: [GREEN, BLUE, ORANGE, RED], borderWidth: 2, borderColor: '#111' }]
+  }, options: { plugins: { legend: { position: 'bottom' } }, cutout: '65%' } });
+
+  // Indexability pie
+  makeChart('chart-indexability', { type: 'doughnut', data: {
+    labels: ['Indexable', 'Non-Indexable'],
+    datasets: [{ data: [indexable, nonIndex], backgroundColor: [LIME, RED], borderWidth: 2, borderColor: '#111' }]
+  }, options: { plugins: { legend: { position: 'bottom' } }, cutout: '65%' } });
+
+  // Content types bar
+  const ctMap = countBy(internal, 'Content Type');
+  const ctLabels = Object.keys(ctMap).map(k => k.replace('; charset=utf-8','').substring(0,25));
+  makeChart('chart-content-types', { type: 'bar', data: {
+    labels: ctLabels, datasets: [{ label: 'URLs', data: Object.values(ctMap), backgroundColor: LIME + '99', borderColor: LIME, borderWidth: 1 }]
+  }, options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { grid: { color: '#222' } }, y: { grid: { color: '#222' } } } } });
+
+  // Crawl depth
+  const depthMap = {};
+  internal.forEach(r => { const d = r['Crawl Depth'] ?? 'N/A'; depthMap[d] = (depthMap[d]||0)+1; });
+  const depthKeys = Object.keys(depthMap).sort((a,b) => Number(a)-Number(b));
+  makeChart('chart-crawl-depth', { type: 'bar', data: {
+    labels: depthKeys.map(d => 'Depth ' + d),
+    datasets: [{ label: 'URLs', data: depthKeys.map(k => depthMap[k]), backgroundColor: BLUE + '88', borderColor: BLUE, borderWidth: 1 }]
+  }, options: { plugins: { legend: { display: false } }, scales: { x: { grid: { color: '#222' } }, y: { grid: { color: '#222' } } } } });
+
+  // ── RESPONSE CODES ──
+  document.getElementById('rc-charts').innerHTML = [
+    chartCard('chart-rc-pie', 'Status Code Breakdown'),
+    chartCard('chart-rc-bar', 'Top Status Codes by Count'),
+  ].join('');
+
+  makeChart('chart-rc-pie', { type: 'doughnut', data: {
+    labels: ['2xx', '3xx', '4xx', '5xx'],
+    datasets: [{ data: [status2xx, status3xx, status4xx, status5xx], backgroundColor: [GREEN, BLUE, ORANGE, RED], borderWidth: 2, borderColor: '#111' }]
+  }, options: { plugins: { legend: { position: 'bottom' } }, cutout: '60%' } });
+
+  const statusMap = countBy(internal, 'Status');
+  const topStatuses = Object.entries(statusMap).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  makeChart('chart-rc-bar', { type: 'bar', data: {
+    labels: topStatuses.map(e=>e[0]), datasets: [{ label: 'Count', data: topStatuses.map(e=>e[1]), backgroundColor: LIME+'99', borderColor: LIME, borderWidth:1 }]
+  }, options: { indexAxis: 'y', plugins: {legend:{display:false}}, scales:{x:{grid:{color:'#222'}},y:{grid:{color:'#222'}}} } });
+
+  buildTable(document.querySelector('#rc-table'), ['URL','Status Code','Status','Content Type','Inlinks'],
+    internal.slice(0, 500), r => `<tr>
+      <td title="${r.Address || ''}">${r.Address || ''}</td>
+      <td>${statusBadge(r['Status Code'])}</td>
+      <td>${r.Status || ''}</td>
+      <td>${(r['Content Type']||'').replace('; charset=utf-8','')}</td>
+      <td>${fmt(r.Inlinks)}</td>
+    </tr>`);
+
+  // ── URL TYPES ──
+  const imgUrls = internal.filter(r => (r['Content Type']||'').startsWith('image/'));
+  const cssUrls = internal.filter(r => (r['Content Type']||'').includes('css'));
+  const jsUrls  = internal.filter(r => (r['Content Type']||'').includes('javascript'));
+  const pdfUrls = internal.filter(r => (r['Content Type']||'').includes('pdf'));
+  const otherUrls = internal.filter(r => {
+    const ct = r['Content Type'] || '';
+    return !ct.includes('html') && !ct.startsWith('image/') && !ct.includes('css') && !ct.includes('javascript') && !ct.includes('pdf');
+  });
+
+  document.getElementById('ut-charts').innerHTML = [
+    chartCard('chart-ut-overview', 'Resource Type Overview'),
+    chartCard('chart-ut-images', 'Image Types'),
+  ].join('');
+
+  makeChart('chart-ut-overview', { type: 'bar', data: {
+    labels: ['HTML', 'Images', 'CSS', 'JavaScript', 'PDF', 'Other'],
+    datasets: [{ label: 'URLs', data: [htmlUrls.length, imgUrls.length, cssUrls.length, jsUrls.length, pdfUrls.length, otherUrls.length],
+      backgroundColor: [LIME+'99', RED+'99', ORANGE+'99', GREEN+'99', PURPLE+'99', BLUE+'99'],
+      borderColor: [LIME, RED, ORANGE, GREEN, PURPLE, BLUE], borderWidth: 1 }]
+  }, options: { plugins: {legend:{display:false}}, scales:{x:{grid:{color:'#222'}},y:{grid:{color:'#222'}}} } });
+
+  const imgTypeMap = countBy(imgUrls, 'Content Type');
+  makeChart('chart-ut-images', { type: 'doughnut', data: {
+    labels: Object.keys(imgTypeMap), datasets: [{ data: Object.values(imgTypeMap),
+      backgroundColor: [RED, ORANGE, PURPLE, BLUE, GREEN].slice(0, Object.keys(imgTypeMap).length), borderWidth:2, borderColor:'#111' }]
+  }, options: { plugins:{legend:{position:'bottom'}}, cutout:'60%' } });
+
+  // ── INDEXABILITY ──
+  const idxStatusMap = countBy(internal.filter(r=>r['Indexability']==='Non-Indexable'), 'Indexability Status');
+  document.getElementById('idx-charts').innerHTML = [
+    chartCard('chart-idx-pie', 'Indexable vs Non-Indexable'),
+    chartCard('chart-idx-reasons', 'Non-Indexability Reasons'),
+  ].join('');
+
+  makeChart('chart-idx-pie', { type: 'doughnut', data: {
+    labels: ['Indexable', 'Non-Indexable'],
+    datasets: [{ data: [indexable, nonIndex], backgroundColor: [LIME, RED], borderWidth:2, borderColor:'#111' }]
+  }, options: { plugins:{legend:{position:'bottom'}}, cutout:'60%' } });
+
+  makeChart('chart-idx-reasons', { type: 'bar', data: {
+    labels: Object.keys(idxStatusMap), datasets: [{ label: 'URLs', data: Object.values(idxStatusMap),
+      backgroundColor: RED+'99', borderColor: RED, borderWidth:1 }]
+  }, options: { indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{grid:{color:'#222'}},y:{grid:{color:'#222'}}} } });
+
+  const nonIndexUrls = internal.filter(r=>r['Indexability']==='Non-Indexable');
+  buildTable(document.querySelector('#idx-table'), ['URL','Status','Indexability Status','Crawl Depth'],
+    nonIndexUrls, r => `<tr>
+      <td title="${r.Address}">${r.Address}</td>
+      <td>${statusBadge(r['Status Code'])}</td>
+      <td>${r['Indexability Status']||'—'}</td>
+      <td>${r['Crawl Depth']||'—'}</td>
+    </tr>`);
+
+  // ── SITE STRUCTURE ──
+  document.getElementById('ss-charts').innerHTML = [
+    chartCard('chart-ss-depth', 'Crawl Depth Distribution', true),
+    chartCard('chart-ss-folder', 'Folder Depth Distribution'),
+  ].join('');
+
+  makeChart('chart-ss-depth', { type: 'bar', data: {
+    labels: depthKeys.map(d=>'Depth '+d),
+    datasets: [{ label: 'URLs', data: depthKeys.map(k=>depthMap[k]), backgroundColor: LIME+'88', borderColor: LIME, borderWidth:1 }]
+  }, options: { plugins:{legend:{display:false}}, scales:{x:{grid:{color:'#222'}},y:{grid:{color:'#222'}}} } });
+
+  const folderMap = {};
+  internal.forEach(r => { const d = r['Folder Depth']??'N/A'; folderMap[d]=(folderMap[d]||0)+1; });
+  const fKeys = Object.keys(folderMap).sort((a,b)=>Number(a)-Number(b));
+  makeChart('chart-ss-folder', { type: 'bar', data: {
+    labels: fKeys.map(d=>'Folder '+d), datasets: [{ label: 'URLs', data: fKeys.map(k=>folderMap[k]),
+      backgroundColor: BLUE+'88', borderColor: BLUE, borderWidth:1 }]
+  }, options: { plugins:{legend:{display:false}}, scales:{x:{grid:{color:'#222'}},y:{grid:{color:'#222'}}} } });
+
+  const topLinked = [...internal].sort((a,b)=>(b.Inlinks||0)-(a.Inlinks||0)).slice(0,20);
+  buildTable(document.querySelector('#ss-table'), ['URL','Inlinks','Unique Inlinks','Crawl Depth','Status'],
+    topLinked, r => `<tr>
+      <td title="${r.Address}">${r.Address}</td>
+      <td style="color:var(--lime)">${fmt(r.Inlinks)}</td>
+      <td>${fmt(r['Unique Inlinks'])}</td>
+      <td>${r['Crawl Depth']||'—'}</td>
+      <td>${statusBadge(r['Status Code'])}</td>
+    </tr>`);
+
+  // ── ON-PAGE ──
+  const htmlOnly = internal.filter(r=>(r['Content Type']||'').includes('html'));
+  const titleMissing   = htmlOnly.filter(r=>!r['Title 1']||r['Title 1 Length']===0).length;
+  const titleLong      = htmlOnly.filter(r=>(r['Title 1 Length']||0)>60).length;
+  const titleShort     = htmlOnly.filter(r=>(r['Title 1 Length']||0)>0&&(r['Title 1 Length']||0)<30).length;
+  const metaMissing    = htmlOnly.filter(r=>!r['Meta Description 1']||r['Meta Description 1 Length']===0).length;
+  const metaLong       = htmlOnly.filter(r=>(r['Meta Description 1 Length']||0)>160).length;
+  const metaShort      = htmlOnly.filter(r=>(r['Meta Description 1 Length']||0)>0&&(r['Meta Description 1 Length']||0)<70).length;
+  const h1Missing      = htmlOnly.filter(r=>!r['H1-1']||r['H1-1 Length']===0).length;
+  const h1Multiple     = htmlOnly.filter(r=>r['H1-2']&&r['H1-2 Length']>0).length;
+
+  document.getElementById('op-scorecards').innerHTML = [
+    scorecard('Missing Titles', fmt(titleMissing), titleMissing>0?'red':'', 'of ' + htmlOnly.length + ' HTML pages'),
+    scorecard('Long Titles', fmt(titleLong), titleLong>0?'orange':'', '>60 chars'),
+    scorecard('Short Titles', fmt(titleShort), titleShort>0?'orange':'', '<30 chars'),
+    scorecard('Missing Meta Desc', fmt(metaMissing), metaMissing>0?'red':'', 'of ' + htmlOnly.length + ' HTML pages'),
+    scorecard('Long Meta Desc', fmt(metaLong), metaLong>0?'orange':'', '>160 chars'),
+    scorecard('Missing H1', fmt(h1Missing), h1Missing>0?'red':'', 'of ' + htmlOnly.length + ' HTML pages'),
+    scorecard('Multiple H1', fmt(h1Multiple), h1Multiple>0?'orange':'', 'Has H1-2 set'),
+  ].join('');
+
+  document.getElementById('op-charts').innerHTML = [
+    chartCard('chart-op-titles', 'Title Tag Health'),
+    chartCard('chart-op-meta', 'Meta Description Health'),
+    chartCard('chart-op-h1', 'H1 Tag Health'),
+    chartCard('chart-op-title-len', 'Title Length Distribution'),
+  ].join('');
+
+  makeChart('chart-op-titles', { type: 'doughnut', data: {
+    labels: ['OK', 'Missing', 'Too Long', 'Too Short'],
+    datasets: [{ data: [htmlOnly.length-titleMissing-titleLong-titleShort, titleMissing, titleLong, titleShort],
+      backgroundColor: [LIME, RED, ORANGE, BLUE], borderWidth:2, borderColor:'#111' }]
+  }, options: { plugins:{legend:{position:'bottom'}}, cutout:'60%' } });
+
+  makeChart('chart-op-meta', { type: 'doughnut', data: {
+    labels: ['OK', 'Missing', 'Too Long', 'Too Short'],
+    datasets: [{ data: [htmlOnly.length-metaMissing-metaLong-metaShort, metaMissing, metaLong, metaShort],
+      backgroundColor: [LIME, RED, ORANGE, BLUE], borderWidth:2, borderColor:'#111' }]
+  }, options: { plugins:{legend:{position:'bottom'}}, cutout:'60%' } });
+
+  makeChart('chart-op-h1', { type: 'doughnut', data: {
+    labels: ['Single H1', 'Missing H1', 'Multiple H1'],
+    datasets: [{ data: [htmlOnly.length-h1Missing-h1Multiple, h1Missing, h1Multiple],
+      backgroundColor: [LIME, RED, ORANGE], borderWidth:2, borderColor:'#111' }]
+  }, options: { plugins:{legend:{position:'bottom'}}, cutout:'60%' } });
+
+  // Title length buckets
+  const lenBuckets = {'0': 0, '1-30': 0, '31-60': 0, '61-70': 0, '71+': 0};
+  htmlOnly.forEach(r => {
+    const l = r['Title 1 Length'] || 0;
+    if(l===0) lenBuckets['0']++;
+    else if(l<=30) lenBuckets['1-30']++;
+    else if(l<=60) lenBuckets['31-60']++;
+    else if(l<=70) lenBuckets['61-70']++;
+    else lenBuckets['71+']++;
+  });
+  makeChart('chart-op-title-len', { type: 'bar', data: {
+    labels: Object.keys(lenBuckets),
+    datasets: [{ label: 'Pages', data: Object.values(lenBuckets), backgroundColor: LIME+'99', borderColor: LIME, borderWidth:1 }]
+  }, options: { plugins:{legend:{display:false}}, scales:{x:{grid:{color:'#222'}},y:{grid:{color:'#222'}}} } });
+
+  // Page titles table
+  buildTable(document.querySelector('#pt-table'), ['URL','Title','Length','Indexable'],
+    pageTitles, r => `<tr>
+      <td title="${r.Address}">${r.Address}</td>
+      <td title="${r['Title 1']||''}">${r['Title 1']||badge('Missing','red')}</td>
+      <td>${r['Title 1 Length']||0}</td>
+      <td>${r.Indexability==='Indexable'?badge('Yes','green'):badge('No','red')}</td>
+    </tr>`);
+
+  // Meta desc table
+  buildTable(document.querySelector('#md-table'), ['URL','Meta Description','Length','Indexable'],
+    metaDesc, r => `<tr>
+      <td title="${r.Address}">${r.Address}</td>
+      <td title="${r['Meta Description 1']||''}">${r['Meta Description 1']||badge('Missing','red')}</td>
+      <td>${r['Meta Description 1 Length']||0}</td>
+      <td>${r.Indexability==='Indexable'?badge('Yes','green'):badge('No','red')}</td>
+    </tr>`);
+
+  // H1 table
+  buildTable(document.querySelector('#h1-table'), ['URL','H1','H1 Length','Multiple H1','Indexable'],
+    h1, r => `<tr>
+      <td title="${r.Address}">${r.Address}</td>
+      <td title="${r['H1-1']||''}">${r['H1-1']||badge('Missing','red')}</td>
+      <td>${r['H1-1 Length']||0}</td>
+      <td>${r['H1-2']?badge('Yes','orange'):badge('No','green')}</td>
+      <td>${r.Indexability==='Indexable'?badge('Yes','green'):badge('No','red')}</td>
+    </tr>`);
+
+  // ── CONTENT ISSUES ──
+  const nearDupes = internal.filter(r=>(r['No. Near Duplicates']||0)>0);
+  const spellingErr = internal.filter(r=>(r['Spelling Errors']||0)>0);
+  const grammarErr  = internal.filter(r=>(r['Grammar Errors']||0)>0);
+
+  document.getElementById('ci-scorecards').innerHTML = [
+    scorecard('Near Duplicates', fmt(nearDupes.length), nearDupes.length>0?'orange':'', 'pages with near-dupe matches'),
+    scorecard('Spelling Errors', fmt(spellingErr.length), spellingErr.length>0?'red':'', 'pages with errors'),
+    scorecard('Grammar Errors', fmt(grammarErr.length), grammarErr.length>0?'orange':'', 'pages with errors'),
+  ].join('');
+
+  document.getElementById('ci-charts').innerHTML = [
+    chartCard('chart-ci-overview', 'Content Issue Overview'),
+  ].join('');
+
+  makeChart('chart-ci-overview', { type: 'bar', data: {
+    labels: ['Near Duplicates', 'Spelling Errors', 'Grammar Errors'],
+    datasets: [{ label: 'Pages', data: [nearDupes.length, spellingErr.length, grammarErr.length],
+      backgroundColor: [ORANGE+'99', RED+'99', PURPLE+'99'], borderColor: [ORANGE, RED, PURPLE], borderWidth:1 }]
+  }, options: { plugins:{legend:{display:false}}, scales:{x:{grid:{color:'#222'}},y:{grid:{color:'#222'}}} } });
+
+  buildTable(document.querySelector('#ci-table'), ['URL','Near Duplicate Match','# Near Dupes','Spelling Errors','Grammar Errors'],
+    nearDupes.slice(0,200), r => `<tr>
+      <td title="${r.Address}">${r.Address}</td>
+      <td title="${r['Closest Near Duplicate Match']||''}">${r['Closest Near Duplicate Match']||'—'}</td>
+      <td>${r['No. Near Duplicates']||0}</td>
+      <td>${r['Spelling Errors']||0}</td>
+      <td>${r['Grammar Errors']||0}</td>
+    </tr>`);
+
+  // ── STRUCTURED DATA ──
+  const sdWithData = structuredData.filter(r=>(r['Total Types']||0)>0).length;
+  const sdMissing  = structuredData.filter(r=>!r['Total Types']||r['Total Types']===0).length;
+  const sdErrors   = structuredData.filter(r=>(r['Errors']||0)>0).length;
+  const sdWarnings = structuredData.filter(r=>(r['Warnings']||0)>0).length;
+  const totalSD = structuredData.length;
+
+  document.getElementById('sd-scorecards').innerHTML = [
+    scorecard('Pages w/ Schema', fmt(sdWithData), 'lime', 'of ' + totalSD + ' crawled'),
+    scorecard('Missing Schema', fmt(sdMissing), sdMissing>0?'orange':'', 'no structured data'),
+    scorecard('Validation Errors', fmt(sdErrors), sdErrors>0?'red':'', 'pages with errors'),
+    scorecard('Validation Warnings', fmt(sdWarnings), sdWarnings>0?'orange':'', 'pages with warnings'),
+  ].join('');
+
+  document.getElementById('sd-charts').innerHTML = [
+    chartCard('chart-sd-pie', 'Schema Coverage'),
+    chartCard('chart-sd-validation', 'Validation Status'),
+  ].join('');
+
+  makeChart('chart-sd-pie', { type: 'doughnut', data: {
+    labels: ['Has Schema', 'Missing Schema'],
+    datasets: [{ data: [sdWithData, sdMissing], backgroundColor: [LIME, RED], borderWidth:2, borderColor:'#111' }]
+  }, options: { plugins:{legend:{position:'bottom'}}, cutout:'60%' } });
+
+  const sdOk = totalSD - sdErrors - sdWarnings;
+  makeChart('chart-sd-validation', { type: 'doughnut', data: {
+    labels: ['No Issues', 'Errors', 'Warnings'],
+    datasets: [{ data: [sdOk>0?sdOk:0, sdErrors, sdWarnings], backgroundColor: [GREEN, RED, ORANGE], borderWidth:2, borderColor:'#111' }]
+  }, options: { plugins:{legend:{position:'bottom'}}, cutout:'60%' } });
+
+  buildTable(document.querySelector('#sd-table'), ['URL','Has Schema','Types','JSON-LD','Errors','Warnings'],
+    structuredData.slice(0,300), r => `<tr>
+      <td title="${r.Address}">${r.Address}</td>
+      <td>${(r['Total Types']||0)>0?badge('Yes','green'):badge('No','orange')}</td>
+      <td>${r['Total Types']||0}</td>
+      <td>${(r['JSON-LD URLs']||r['Type-1'])?badge('JSON-LD','blue'):badge('None','muted')}</td>
+      <td>${(r.Errors||0)>0?badge(r.Errors,'red'):0}</td>
+      <td>${(r.Warnings||0)>0?badge(r.Warnings,'orange'):0}</td>
+    </tr>`);
+
+  // ── SECURITY ──
+  const httpsUrls = internal.filter(r=>(r.Address||'').startsWith('https://'));
+  const httpUrls  = internal.filter(r=>(r.Address||'').startsWith('http://') && !(r.Address||'').startsWith('https://'));
+
+  document.getElementById('sec-charts').innerHTML = [
+    chartCard('chart-sec-pie', 'HTTPS vs HTTP'),
+    chartCard('chart-sec-http-ver', 'HTTP Version Distribution'),
+  ].join('');
+
+  makeChart('chart-sec-pie', { type: 'doughnut', data: {
+    labels: ['HTTPS', 'HTTP (Insecure)'],
+    datasets: [{ data: [httpsUrls.length, httpUrls.length], backgroundColor: [LIME, RED], borderWidth:2, borderColor:'#111' }]
+  }, options: { plugins:{legend:{position:'bottom'}}, cutout:'60%' } });
+
+  const httpVerMap = countBy(internal, 'HTTP Version');
+  makeChart('chart-sec-http-ver', { type: 'bar', data: {
+    labels: Object.keys(httpVerMap), datasets: [{ label: 'URLs', data: Object.values(httpVerMap),
+      backgroundColor: BLUE+'99', borderColor: BLUE, borderWidth:1 }]
+  }, options: { plugins:{legend:{display:false}}, scales:{x:{grid:{color:'#222'}},y:{grid:{color:'#222'}}} } });
+
+  buildTable(document.querySelector('#sec-table'), ['URL','Status Code','HTTP Version'],
+    httpUrls, r => `<tr>
+      <td title="${r.Address}">${r.Address}</td>
+      <td>${statusBadge(r['Status Code'])}</td>
+      <td>${r['HTTP Version']||'—'}</td>
+    </tr>`);
+
+  // ── SITEMAPS ──
+  const smIndexable = sitemaps.filter(r=>r.Indexability==='Indexable').length;
+  const smNonIndex  = sitemaps.filter(r=>r.Indexability==='Non-Indexable').length;
+  const sm2xx = sitemaps.filter(r=>r['Status Code']>=200&&r['Status Code']<300).length;
+  const sm3xx = sitemaps.filter(r=>r['Status Code']>=300&&r['Status Code']<400).length;
+  const sm4xx = sitemaps.filter(r=>r['Status Code']>=400&&r['Status Code']<500).length;
+
+  document.getElementById('sm-scorecards').innerHTML = [
+    scorecard('Sitemap URLs', fmt(sitemaps.length), 'lime', 'total entries'),
+    scorecard('Indexable', fmt(smIndexable), 'lime', pct(smIndexable, sitemaps.length)),
+    scorecard('Non-Indexable', fmt(smNonIndex), smNonIndex>0?'orange':'', 'in sitemap but non-indexable'),
+    scorecard('4xx in Sitemap', fmt(sm4xx), sm4xx>0?'red':'', 'broken sitemap entries'),
+  ].join('');
+
+  document.getElementById('sm-charts').innerHTML = [
+    chartCard('chart-sm-index', 'Sitemap Indexability'),
+    chartCard('chart-sm-status', 'Sitemap Status Codes'),
+  ].join('');
+
+  makeChart('chart-sm-index', { type: 'doughnut', data: {
+    labels: ['Indexable', 'Non-Indexable'],
+    datasets: [{ data: [smIndexable, smNonIndex], backgroundColor: [LIME, RED], borderWidth:2, borderColor:'#111' }]
+  }, options: { plugins:{legend:{position:'bottom'}}, cutout:'60%' } });
+
+  makeChart('chart-sm-status', { type: 'doughnut', data: {
+    labels: ['2xx', '3xx', '4xx'],
+    datasets: [{ data: [sm2xx, sm3xx, sm4xx], backgroundColor: [GREEN, BLUE, RED], borderWidth:2, borderColor:'#111' }]
+  }, options: { plugins:{legend:{position:'bottom'}}, cutout:'60%' } });
+
+  buildTable(document.querySelector('#sm-table'), ['URL','Status','Indexability','Content Type'],
+    sitemaps.slice(0,300), r => `<tr>
+      <td title="${r.Address}">${r.Address}</td>
+      <td>${statusBadge(r['Status Code'])}</td>
+      <td>${r.Indexability==='Indexable'?badge('Indexable','green'):badge(r.Indexability||'—','orange')}</td>
+      <td>${(r['Content Type']||'').replace('; charset=utf-8','')}</td>
+    </tr>`);
+}
+
+window.filterTable = filterTable;
+init().catch(e => {
+  document.getElementById('global-loading').innerHTML = `<div style="color:var(--red)">Error loading data: ${e.message}</div>`;
+});
+</script>
+</body>
+</html>
