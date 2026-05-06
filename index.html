@@ -620,18 +620,30 @@ async function init() {
     </tr>`);
 
   // ── CONTENT ISSUES ──
-  const nearDupes = internal.filter(r=>(r['No. Near Duplicates']||0)>0);
-  const spellingErr = internal.filter(r=>(r['Spelling Errors']||0)>0);
-  const grammarErr  = internal.filter(r=>(r['Grammar Errors']||0)>0);
+  const ciPages     = internal.filter(r => r['Status Code'] === 200 && (r['Content Type']||'').includes('html'));
+  const nearDupes   = ciPages.filter(r => (r['No. Near Duplicates']||0) > 0);
+  const spellingErr = ciPages.filter(r => (r['Spelling Errors']||0) > 0);
+  const grammarErr  = ciPages.filter(r => (r['Grammar Errors']||0) > 0);
+
+  const avgWordCount = ciPages.length ? Math.round(ciPages.reduce((s,r)=>s+(r['Word Count']||0),0)/ciPages.length) : 0;
+  const avgFlesch    = ciPages.length ? (ciPages.reduce((s,r)=>s+(r['Flesch Reading Ease Score']||0),0)/ciPages.length).toFixed(1) : 0;
+
+  // Readability bucket counts
+  const readMap = countBy(ciPages, 'Readability');
 
   document.getElementById('ci-scorecards').innerHTML = [
     scorecard('Near Duplicates', fmt(nearDupes.length), nearDupes.length>0?'orange':'', 'pages with near-dupe matches'),
     scorecard('Spelling Errors', fmt(spellingErr.length), spellingErr.length>0?'red':'', 'pages with errors'),
     scorecard('Grammar Errors', fmt(grammarErr.length), grammarErr.length>0?'orange':'', 'pages with errors'),
+    scorecard('Avg Word Count', fmt(avgWordCount), '', 'across 200 OK HTML pages'),
+    scorecard('Avg Flesch Score', avgFlesch, Number(avgFlesch)>=60?'lime':Number(avgFlesch)>=40?'orange':'red', '0=hard · 100=easy'),
   ].join('');
 
   document.getElementById('ci-charts').innerHTML = [
-    chartCard('chart-ci-overview', 'Content Issue Overview'),
+    chartCard('chart-ci-overview', 'Issues Overview'),
+    chartCard('chart-ci-readability', 'Readability Distribution'),
+    chartCard('chart-ci-wordcount', 'Word Count Distribution'),
+    chartCard('chart-ci-flesch', 'Flesch Reading Ease Distribution'),
   ].join('');
 
   makeChart('chart-ci-overview', { type: 'bar', data: {
@@ -640,13 +652,53 @@ async function init() {
       backgroundColor: [ORANGE+'99', RED+'99', PURPLE+'99'], borderColor: [ORANGE, RED, PURPLE], borderWidth:1 }]
   }, options: { plugins:{legend:{display:false}}, scales:{x:{grid:{color:'#222'}},y:{grid:{color:'#222'}}} } });
 
-  buildTable(document.querySelector('#ci-table'), ['URL','Near Duplicate Match','# Near Dupes','Spelling Errors','Grammar Errors'],
-    nearDupes.slice(0,200), r => `<tr>
+  makeChart('chart-ci-readability', { type: 'doughnut', data: {
+    labels: Object.keys(readMap),
+    datasets: [{ data: Object.values(readMap),
+      backgroundColor: [LIME, GREEN, BLUE, ORANGE, RED, PURPLE].slice(0, Object.keys(readMap).length),
+      borderWidth:2, borderColor:'#111' }]
+  }, options: { plugins:{legend:{position:'bottom'}}, cutout:'60%' } });
+
+  const wcBuckets = {'0–100':0,'101–300':0,'301–600':0,'601–1000':0,'1001–2000':0,'2000+':0};
+  ciPages.forEach(r => {
+    const w = r['Word Count']||0;
+    if(w<=100) wcBuckets['0–100']++;
+    else if(w<=300) wcBuckets['101–300']++;
+    else if(w<=600) wcBuckets['301–600']++;
+    else if(w<=1000) wcBuckets['601–1000']++;
+    else if(w<=2000) wcBuckets['1001–2000']++;
+    else wcBuckets['2000+']++;
+  });
+  makeChart('chart-ci-wordcount', { type: 'bar', data: {
+    labels: Object.keys(wcBuckets), datasets: [{ label: 'Pages', data: Object.values(wcBuckets),
+      backgroundColor: BLUE+'88', borderColor: BLUE, borderWidth:1 }]
+  }, options: { plugins:{legend:{display:false}}, scales:{x:{grid:{color:'#222'}},y:{grid:{color:'#222'}}} } });
+
+  const fleschBuckets = {'0–29 (Very Hard)':0,'30–49 (Hard)':0,'50–59 (Fairly Hard)':0,'60–69 (Standard)':0,'70–79 (Fairly Easy)':0,'80–100 (Easy)':0};
+  ciPages.forEach(r => {
+    const f = r['Flesch Reading Ease Score']||0;
+    if(f<30) fleschBuckets['0–29 (Very Hard)']++;
+    else if(f<50) fleschBuckets['30–49 (Hard)']++;
+    else if(f<60) fleschBuckets['50–59 (Fairly Hard)']++;
+    else if(f<70) fleschBuckets['60–69 (Standard)']++;
+    else if(f<80) fleschBuckets['70–79 (Fairly Easy)']++;
+    else fleschBuckets['80–100 (Easy)']++;
+  });
+  makeChart('chart-ci-flesch', { type: 'bar', data: {
+    labels: Object.keys(fleschBuckets), datasets: [{ label: 'Pages', data: Object.values(fleschBuckets),
+      backgroundColor: LIME+'88', borderColor: LIME, borderWidth:1 }]
+  }, options: { plugins:{legend:{display:false}}, scales:{x:{grid:{color:'#222'}},y:{grid:{color:'#222'}}} } });
+
+  buildTable(document.querySelector('#ci-table'), ['URL','Word Count','Flesch Score','Readability','Near Dupe Match','# Dupes','Spelling','Grammar'],
+    ciPages.slice(0,500), r => `<tr>
       <td title="${r.Address}">${r.Address}</td>
+      <td>${fmt(r['Word Count'])}</td>
+      <td>${r['Flesch Reading Ease Score']||'—'}</td>
+      <td>${r['Readability']||'—'}</td>
       <td title="${r['Closest Near Duplicate Match']||''}">${r['Closest Near Duplicate Match']||'—'}</td>
-      <td>${r['No. Near Duplicates']||0}</td>
-      <td>${r['Spelling Errors']||0}</td>
-      <td>${r['Grammar Errors']||0}</td>
+      <td>${(r['No. Near Duplicates']||0)>0?badge(r['No. Near Duplicates'],'orange'):0}</td>
+      <td>${(r['Spelling Errors']||0)>0?badge(r['Spelling Errors'],'red'):0}</td>
+      <td>${(r['Grammar Errors']||0)>0?badge(r['Grammar Errors'],'orange'):0}</td>
     </tr>`);
 
   // ── STRUCTURED DATA ──
