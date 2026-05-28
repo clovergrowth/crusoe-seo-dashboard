@@ -491,10 +491,12 @@
 
   <!-- SECURITY -->
   <div class="tab-panel" id="panel-security">
-    <div class="section-head"><h2>Security</h2><p>HTTPS vs HTTP and protocol analysis</p></div>
+    <div class="section-head"><h2>Security</h2><p>HTTPS coverage and insecure HTTP URLs — fix these with 301 redirects to HTTPS equivalents</p></div>
     <div class="charts-grid" id="sec-charts"></div>
+    <div class="scorecards" id="sec-scorecards"></div>
     <div class="table-card">
-      <div class="table-header"><span style="display:flex;align-items:center;gap:12px">HTTP URLs (Security Risk) <input class="table-search" id="sec-search" placeholder="Filter…" oninput="filterTable('sec-table', this.value)"></span><button onclick="exportTableCSV('sec-table','crusoe-http-urls.csv')" style="background:var(--card2);border:1px solid var(--border);border-radius:50px;padding:6px 14px;color:var(--lime);font-family:'DM Sans',Arial,sans-serif;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.25s ease;white-space:nowrap" onmouseover="this.style.background='var(--lime)';this.style.color='var(--black)'" onmouseout="this.style.background='var(--card2)';this.style.color='var(--lime)'">↓ CSV</button></div>
+      <div class="table-header"><span style="display:flex;align-items:center;gap:12px">Insecure HTTP URLs — redirect to HTTPS <input class="table-search" id="sec-search" placeholder="Filter…" oninput="filterTable('sec-table', this.value)"></span><button onclick="exportTableCSV('sec-table','crusoe-http-urls.csv')" style="background:var(--card2);border:1px solid var(--border);border-radius:50px;padding:6px 14px;color:var(--lime);font-family:'DM Sans',Arial,sans-serif;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.25s ease;white-space:nowrap" onmouseover="this.style.background='var(--lime)';this.style.color='var(--black)'" onmouseout="this.style.background='var(--card2)';this.style.color='var(--lime)'">↓ CSV</button></div>
+      <div id="sec-table-empty" style="display:none;padding:24px 16px;color:var(--muted);font-size:13px;text-align:center">✅ No insecure HTTP URLs detected — all crawled pages are served over HTTPS.</div>
       <div class="table-wrap"><table id="sec-table"></table></div>
     </div>
   </div>
@@ -835,12 +837,64 @@ async function init() {
     datasets: [{ data: [indexable, nonIndex], backgroundColor: [LIME, RED], borderWidth: 2, borderColor: '#111' }]
   }, options: { plugins: { legend: { position: 'bottom' } }, cutout: '65%' } });
 
-  // Content types bar
+  // Content types bar — keep charset variants separate (meaningful distinction)
+  // but use readable labels instead of raw mime strings
   const ctMap = countBy(internal, 'Content Type');
-  const ctLabels = Object.keys(ctMap).map(k => k.replace('; charset=utf-8','').substring(0,25));
+  const ctLabelMap = {
+    'text/html; charset=utf-8': 'HTML w/ charset',
+    'text/html':                'HTML no charset',
+  };
+  const ctLabels = Object.keys(ctMap).map(k => ctLabelMap[k] || k.replace(/;\s*charset=[^\s;]+/gi,'').substring(0,20));
   makeChart('chart-content-types', { type: 'bar', data: {
-    labels: ctLabels, datasets: [{ label: 'URLs', data: Object.values(ctMap), backgroundColor: LIME + '99', borderColor: LIME, borderWidth: 1 }]
-  }, options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { grid: { color: '#222' } }, y: { grid: { color: '#222' } } } } });
+    labels: ctLabels,
+    datasets: [{
+      label: 'URLs',
+      data: Object.values(ctMap),
+      backgroundColor: LIME + '99',
+      borderColor: LIME,
+      borderWidth: 1,
+      // Show count value at the end of each bar
+      datalabels: { display: false }
+    }]
+  }, options: {
+    indexAxis: 'y',
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: ctx => ` ${ctx.raw} URLs` } }
+    },
+    scales: {
+      x: { grid: { color: '#222' } },
+      y: {
+        grid: { color: '#222' },
+        ticks: {
+          autoSkip: false,
+          maxRotation: 0,
+          font: { size: 11 },
+          color: '#ccc'
+        }
+      }
+    },
+    layout: { padding: { left: 4 } },
+    animation: {
+      onComplete: function() {
+        const chart = this;
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.font = '11px DM Sans, Arial, sans-serif';
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        chart.data.datasets.forEach((dataset, i) => {
+          const meta = chart.getDatasetMeta(i);
+          meta.data.forEach((bar, index) => {
+            const value = dataset.data[index];
+            ctx.fillText(value, bar.x + 6, bar.y);
+          });
+        });
+        ctx.restore();
+      }
+    }
+  } });
 
   // Crawl depth
   const depthMap = {};
@@ -912,25 +966,32 @@ async function init() {
       backgroundColor: RED+'99', borderColor: RED, borderWidth:1 }]
   }, options: { indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{grid:{color:'#222'}},y:{grid:{color:'#222'}}} } });
 
-  const nonIndexUrls = internal.filter(r=>r['Indexability']==='Non-Indexable');
-  buildTable(document.querySelector('#idx-table'), ['URL','Status','Indexability Status','Crawl Depth'],
+  const nonIndexUrls = internal.filter(r=>r['Indexability']==='Non-Indexable')
+    .sort((a,b) => (+b.Inlinks||0) - (+a.Inlinks||0));
+  buildTable(document.querySelector('#idx-table'), ['URL','Status','Indexability Status','Crawl Depth','Inlinks'],
     nonIndexUrls, r => `<tr>
       <td title="${r.Address}">${r.Address}</td>
       <td>${statusBadge(r['Status Code'])}</td>
       <td>${r['Indexability Status']||'—'}</td>
       <td>${r['Crawl Depth'] != null ? r['Crawl Depth'] : '—'}</td>
+      <td style="color:${(+r.Inlinks||0)>0?'var(--orange)':'var(--muted)'}">${fmt(r.Inlinks||0)}</td>
     </tr>`);
   addColFilter('idx-table', 2, 'Reason');
 
   // ── SITE STRUCTURE ──
   document.getElementById('ss-charts').innerHTML = [
-    chartCard('chart-ss-depth', 'Crawl Depth Distribution', true),
+    chartCard('chart-ss-depth', 'Crawl Depth — Indexable Pages Only', true),
     chartCard('chart-ss-folder', 'Folder Depth Distribution'),
   ].join('');
 
+  // Indexable pages only — differs from Summary which shows all URLs
+  const idxDepthMap = {};
+  internal.filter(r => r['Indexability'] === 'Indexable' && r['Crawl Depth'] !== 0)
+    .forEach(r => { const d = r['Crawl Depth'] != null ? r['Crawl Depth'] : 'N/A'; idxDepthMap[d] = (idxDepthMap[d]||0)+1; });
+  const idxDepthKeys = Object.keys(idxDepthMap).sort((a,b) => { if (a==='N/A') return 1; if (b==='N/A') return -1; return Number(a)-Number(b); });
   makeChart('chart-ss-depth', { type: 'bar', data: {
-    labels: depthKeys.map(d=>'Depth '+d),
-    datasets: [{ label: 'URLs', data: depthKeys.map(k=>depthMap[k]), backgroundColor: LIME+'88', borderColor: LIME, borderWidth:1 }]
+    labels: idxDepthKeys.map(d=>'Depth '+d),
+    datasets: [{ label: 'Indexable URLs', data: idxDepthKeys.map(k=>idxDepthMap[k]), backgroundColor: LIME+'88', borderColor: LIME, borderWidth:1 }]
   }, options: { plugins:{legend:{display:false}}, scales:{x:{grid:{color:'#222'}},y:{grid:{color:'#222'}}} } });
 
   const folderMap = {};
@@ -962,6 +1023,7 @@ async function init() {
   const h1Missing      = htmlOnly.filter(r=>!r['H1-1']||r['H1-1 Length']===0).length;
   const h1Multiple     = htmlOnly.filter(r=>r['H1-2']&&r['H1-2 Length']>0).length;
 
+  const noCharset = internal.filter(r => r['Content Type'] === 'text/html').length;
   document.getElementById('op-scorecards').innerHTML = [
     scorecard('Missing Titles', fmt(titleMissing), titleMissing>0?'red':'', 'of ' + htmlOnly.length + ' HTML pages'),
     scorecard('Long Titles', fmt(titleLong), titleLong>0?'orange':'', '>60 chars'),
@@ -970,6 +1032,7 @@ async function init() {
     scorecard('Long Meta Desc', fmt(metaLong), metaLong>0?'orange':'', '>160 chars'),
     scorecard('Missing H1', fmt(h1Missing), h1Missing>0?'red':'', 'of ' + htmlOnly.length + ' HTML pages'),
     scorecard('Multiple H1', fmt(h1Multiple), h1Multiple>0?'orange':'', 'Has H1-2 set'),
+    scorecard('No Charset Declared', fmt(noCharset), noCharset>0?'orange':'', 'Missing charset in Content-Type'),
   ].join('');
 
   document.getElementById('op-charts').innerHTML = [
@@ -1027,18 +1090,52 @@ async function init() {
   ]);
 
   // Meta desc table
-  buildTable(document.querySelector('#md-table'), ['URL','Meta Description','Length','Indexable'],
-    metaDesc, r => `<tr>
+  // Meta descriptions table — indexable pages only by default
+  const metaDescIndexable = metaDesc.filter(r => r.Indexability === 'Indexable');
+  buildTable(document.querySelector('#md-table'), ['URL','Meta Description','Length'],
+    metaDescIndexable, r => `<tr>
       <td title="${r.Address}">${r.Address}</td>
       <td title="${r['Meta Description 1']||''}">${r['Meta Description 1']||badge('Missing','red')}</td>
       <td>${r['Meta Description 1 Length']||0}</td>
-      <td>${r.Indexability==='Indexable'?badge('Yes','green'):badge('No','red')}</td>
     </tr>`);
+
+  // Scope text filter to meta description column only (col 1), not the full row
+  document.getElementById('md-search').oninput = function() {
+    const q = this.value.toLowerCase();
+    document.querySelectorAll('#md-table tbody tr').forEach(row => {
+      const metaText = row.cells[1]?.textContent.toLowerCase() || '';
+      row.style.display = (!q || metaText.includes(q)) ? '' : 'none';
+    });
+  };
+
   addOptionsFilter('md-table', 'Meta Issues', [
     { label: 'Missing meta description', fn: r => r.cells[1]?.textContent.trim() === 'Missing' },
     { label: 'Too long (>160 chars)',     fn: r => +r.cells[2]?.textContent.trim() > 160 },
     { label: 'Too short (<70 chars)',     fn: r => { const l = +r.cells[2]?.textContent.trim(); return l > 0 && l < 70; } },
   ]);
+
+  // Toggle to show non-indexable pages
+  const mdNonIdx = metaDesc.filter(r => r.Indexability !== 'Indexable');
+  if (mdNonIdx.length > 0) {
+    const header = document.querySelector('#md-table')?.closest('.table-card')?.querySelector('.table-header');
+    if (header) {
+      const toggle = document.createElement('label');
+      toggle.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;margin-left:8px;white-space:nowrap';
+      toggle.innerHTML = `<input type="checkbox" id="md-show-nonidx" style="cursor:pointer"> Show non-indexable (${mdNonIdx.length})`;
+      header.appendChild(toggle);
+      document.getElementById('md-show-nonidx').addEventListener('change', function() {
+        const rows = document.querySelectorAll('#md-table tbody tr');
+        // rebuild with or without non-indexable
+        const dataset = this.checked ? metaDesc : metaDescIndexable;
+        buildTable(document.querySelector('#md-table'), ['URL','Meta Description','Length'],
+          dataset, r => `<tr>
+            <td title="${r.Address}">${r.Address}</td>
+            <td title="${r['Meta Description 1']||''}">${r['Meta Description 1']||badge('Missing','red')}</td>
+            <td>${r['Meta Description 1 Length']||0}</td>
+          </tr>`);
+      });
+    }
+  }
 
   // H1 table
   buildTable(document.querySelector('#h1-table'), ['URL','H1','H1 Length','Multiple H1','Indexable'],
@@ -1203,7 +1300,6 @@ async function init() {
 
   document.getElementById('sec-charts').innerHTML = [
     chartCard('chart-sec-pie', 'HTTPS vs HTTP'),
-    chartCard('chart-sec-http-ver', 'HTTP Version Distribution'),
   ].join('');
 
   makeChart('chart-sec-pie', { type: 'doughnut', data: {
@@ -1211,18 +1307,24 @@ async function init() {
     datasets: [{ data: [httpsUrls.length, httpUrls.length], backgroundColor: [LIME, RED], borderWidth:2, borderColor:'#111' }]
   }, options: { plugins:{legend:{position:'bottom'}}, cutout:'60%' } });
 
-  const httpVerMap = countBy(internal, 'HTTP Version');
-  makeChart('chart-sec-http-ver', { type: 'bar', data: {
-    labels: Object.keys(httpVerMap), datasets: [{ label: 'URLs', data: Object.values(httpVerMap),
-      backgroundColor: BLUE+'99', borderColor: BLUE, borderWidth:1 }]
-  }, options: { plugins:{legend:{display:false}}, scales:{x:{grid:{color:'#222'}},y:{grid:{color:'#222'}}} } });
+  document.getElementById('sec-scorecards').innerHTML = [
+    scorecard('HTTPS URLs',          fmt(httpsUrls.length), '', 'Served securely'),
+    scorecard('HTTP URLs (Insecure)', fmt(httpUrls.length),  httpUrls.length > 0 ? 'red' : '', httpUrls.length > 0 ? 'Require 301 redirect to HTTPS' : 'None detected'),
+  ].join('');
 
-  buildTable(document.querySelector('#sec-table'), ['URL','Status Code','HTTP Version'],
-    httpUrls, r => `<tr>
-      <td title="${r.Address}">${r.Address}</td>
-      <td>${statusBadge(r['Status Code'])}</td>
-      <td>${r['HTTP Version']||'—'}</td>
-    </tr>`);
+  if (httpUrls.length === 0) {
+    document.getElementById('sec-table-empty').style.display = 'block';
+    document.querySelector('#sec-table').style.display = 'none';
+  } else {
+    const secSorted = [...httpUrls].sort((a, b) => (+b.Inlinks || 0) - (+a.Inlinks || 0));
+    buildTable(document.querySelector('#sec-table'), ['URL', 'Status Code', 'Crawl Depth', 'Inlinks'],
+      secSorted, r => `<tr>
+        <td title="${r.Address}">${r.Address}</td>
+        <td>${statusBadge(r['Status Code'])}</td>
+        <td>${r['Crawl Depth'] != null ? r['Crawl Depth'] : '—'}</td>
+        <td style="color:${(+r.Inlinks||0)>0?'var(--orange)':'var(--muted)'}">${fmt(r.Inlinks||0)}</td>
+      </tr>`);
+  }
 
   // ── SITEMAPS ──
   const smIndexable = sitemaps.filter(r=>r.Indexability==='Indexable').length;
