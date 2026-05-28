@@ -213,6 +213,9 @@
   }
   .table-search:focus { border-color: rgba(206,235,19,0.4); }
   .table-search::placeholder { color: var(--muted); }
+  .sec-pill { background: var(--card2); border: 1px solid var(--border); border-radius: 50px; padding: 4px 12px; font-size: 11px; font-weight: 600; color: var(--muted); cursor: pointer; transition: all 0.2s; font-family: 'DM Sans', Arial, sans-serif; }
+  .sec-pill:hover { color: var(--text); }
+  .sec-pill.active { background: rgba(206,235,19,0.12); color: var(--lime); border-color: rgba(206,235,19,0.3); }
   .table-wrap { overflow-x: auto; max-height: 420px; overflow-y: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 12px; }
   th {
@@ -496,6 +499,12 @@
     <div class="scorecards" id="sec-scorecards"></div>
     <div class="table-card">
       <div class="table-header"><span style="display:flex;align-items:center;gap:12px">Insecure HTTP URLs — redirect to HTTPS <input class="table-search" id="sec-search" placeholder="Filter…" oninput="filterTable('sec-table', this.value)"></span><button onclick="exportTableCSV('sec-table','crusoe-http-urls.csv')" style="background:var(--card2);border:1px solid var(--border);border-radius:50px;padding:6px 14px;color:var(--lime);font-family:'DM Sans',Arial,sans-serif;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.25s ease;white-space:nowrap" onmouseover="this.style.background='var(--lime)';this.style.color='var(--black)'" onmouseout="this.style.background='var(--card2)';this.style.color='var(--lime)'">↓ CSV</button></div>
+      <div id="sec-protocol-filter" style="padding:10px 16px 4px;display:flex;align-items:center;gap:8px;">
+        <span style="font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:0.8px;">Protocol:</span>
+        <button id="sec-f-http" class="sec-pill active" onclick="filterSecProtocol('http')">HTTP</button>
+        <button id="sec-f-https" class="sec-pill" onclick="filterSecProtocol('https')">HTTPS</button>
+        <button id="sec-f-all" class="sec-pill" onclick="filterSecProtocol('all')">All</button>
+      </div>
       <div id="sec-table-empty" style="display:none;padding:24px 16px;color:var(--muted);font-size:13px;text-align:center">✅ No insecure HTTP URLs detected — all crawled pages are served over HTTPS.</div>
       <div class="table-wrap"><table id="sec-table"></table></div>
     </div>
@@ -634,6 +643,7 @@ function badge(text, type) {
 
 // ── Table state: sort + filters per table ────────────────────────────
 const _tbl = {};
+let _secHttp = [], _secHttps = [];
 function _tblState(id) {
   if (!_tbl[id]) _tbl[id] = { textQ: '', filterCol: -1, filterVal: '', sortCol: -1, sortDir: 1, customFilter: null };
   return _tbl[id];
@@ -1312,19 +1322,9 @@ async function init() {
     scorecard('HTTP URLs (Insecure)', fmt(httpUrls.length),  httpUrls.length > 0 ? 'red' : '', httpUrls.length > 0 ? 'Require 301 redirect to HTTPS' : 'None detected'),
   ].join('');
 
-  if (httpUrls.length === 0) {
-    document.getElementById('sec-table-empty').style.display = 'block';
-    document.querySelector('#sec-table').style.display = 'none';
-  } else {
-    const secSorted = [...httpUrls].sort((a, b) => (+b.Inlinks || 0) - (+a.Inlinks || 0));
-    buildTable(document.querySelector('#sec-table'), ['URL', 'Status Code', 'Crawl Depth', 'Inlinks'],
-      secSorted, r => `<tr>
-        <td title="${r.Address}">${r.Address}</td>
-        <td>${statusBadge(r['Status Code'])}</td>
-        <td>${r['Crawl Depth'] != null ? r['Crawl Depth'] : '—'}</td>
-        <td style="color:${(+r.Inlinks||0)>0?'var(--orange)':'var(--muted)'}">${fmt(r.Inlinks||0)}</td>
-      </tr>`);
-  }
+  _secHttp  = [...httpUrls].sort((a, b) => (+b.Inlinks || 0) - (+a.Inlinks || 0));
+  _secHttps = [...httpsUrls].sort((a, b) => (+b.Inlinks || 0) - (+a.Inlinks || 0));
+  filterSecProtocol('http');
 
   // ── SITEMAPS ──
   const smIndexable = sitemaps.filter(r=>r.Indexability==='Indexable').length;
@@ -1371,6 +1371,36 @@ async function init() {
 }
 
 window.filterTable = filterTable;
+
+function filterSecProtocol(type) {
+  document.querySelectorAll('.sec-pill').forEach(b => b.classList.remove('active'));
+  document.getElementById('sec-f-' + type)?.classList.add('active');
+  const rows = type === 'http'
+    ? _secHttp
+    : type === 'https'
+      ? _secHttps
+      : [..._secHttp, ..._secHttps].sort((a, b) => (+b.Inlinks || 0) - (+a.Inlinks || 0));
+  const tableEl = document.querySelector('#sec-table');
+  const emptyEl = document.getElementById('sec-table-empty');
+  if (rows.length === 0) {
+    emptyEl.style.display = 'block';
+    tableEl.style.display = 'none';
+    emptyEl.textContent = type === 'http'
+      ? '✅ No insecure HTTP URLs detected — all crawled pages are served over HTTPS.'
+      : '✅ No URLs found for this filter.';
+  } else {
+    emptyEl.style.display = 'none';
+    tableEl.style.display = '';
+    buildTable(tableEl, ['URL', 'Status Code', 'Crawl Depth', 'Inlinks'],
+      rows, r => `<tr>
+        <td title="${r.Address}">${r.Address}</td>
+        <td>${statusBadge(r['Status Code'])}</td>
+        <td>${r['Crawl Depth'] != null ? r['Crawl Depth'] : '—'}</td>
+        <td style="color:${(+r.Inlinks||0)>0?'var(--orange)':'var(--muted)'}">${fmt(r.Inlinks||0)}</td>
+      </tr>`);
+  }
+}
+window.filterSecProtocol = filterSecProtocol;
 
 // ── CSV Export ──
 function exportTableCSV(tableId, filename) {
