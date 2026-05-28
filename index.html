@@ -394,7 +394,11 @@
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:10px;">
-      <div class="topbar-date">Crawl: <span id="crawl-date-display">Loading…</span></div>
+      <div class="topbar-date" style="display:flex;align-items:center;gap:6px;">Crawl:
+        <select id="crawl-date-picker" style="background:var(--card2);border:1px solid var(--border);border-radius:var(--radius-badge);padding:3px 8px;color:var(--text);font-family:'DM Sans',Arial,sans-serif;font-size:12px;cursor:pointer;outline:none;">
+          <option>Loading…</option>
+        </select>
+      </div>
       <button id="cache-clear-btn" title="Force refresh data from Airtable" style="background:var(--card2);border:1px solid var(--border);border-radius:50px;padding:6px 14px;color:var(--muted);font-family:'DM Sans',Arial,sans-serif;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.25s ease;" onmouseover="this.style.color='var(--lime)'" onmouseout="this.style.color='var(--muted)'">
         <i data-lucide="refresh-cw" style="width:13px;height:13px;stroke:currentColor"></i> Refresh
       </button>
@@ -543,7 +547,12 @@ Chart.defaults.font.family = 'Inter, Arial, sans-serif';
 
 const CACHE_TTL = 24 * 60 * 60 * 1000; // 24h in ms
 
-function cacheKey(tableId) { return `at_cache_${BASE_ID}_${tableId}`; }
+// ── Crawl date selection (persisted across reloads) ──
+let selectedCrawlDate = localStorage.getItem('selected_crawl_date') || null;
+
+function cacheKey(tableId) {
+  return `at_cache_${BASE_ID}_${tableId}${selectedCrawlDate ? '_' + selectedCrawlDate : ''}`;
+}
 
 function readCache(tableId) {
   try {
@@ -559,13 +568,32 @@ function writeCache(tableId, data) {
   try { localStorage.setItem(cacheKey(tableId), JSON.stringify({ ts: Date.now(), data })); } catch {}
 }
 
-async function fetchAll(tableId) {
+// Fetch all unique crawl dates from the Internal table (newest first)
+async function fetchUniqueDates() {
+  const url = `https://api.airtable.com/v0/${BASE_ID}/${TABLES.internal}?pageSize=100&fields%5B%5D=Crawl%20Date`;
+  let dates = new Set(), offset = null;
+  try {
+    do {
+      const res = await fetch(url + (offset ? '&offset=' + offset : ''), { headers: { Authorization: `Bearer ${AT_TOKEN}` } });
+      const data = await res.json();
+      data.records.forEach(r => { if (r.fields['Crawl Date']) dates.add(r.fields['Crawl Date']); });
+      offset = data.offset || null;
+    } while (offset);
+  } catch {}
+  return [...dates].sort((a, b) => new Date(b) - new Date(a));
+}
+
+async function fetchAll(tableId, supportsDateFilter = true) {
   const cached = readCache(tableId);
   if (cached) return cached;
 
+  const filterFormula = (selectedCrawlDate && supportsDateFilter)
+    ? `&filterByFormula=${encodeURIComponent(`{Crawl Date}='${selectedCrawlDate}'`)}`
+    : '';
+
   let records = [], offset = null;
   do {
-    const url = `https://api.airtable.com/v0/${BASE_ID}/${tableId}?pageSize=100${offset ? '&offset=' + offset : ''}`;
+    const url = `https://api.airtable.com/v0/${BASE_ID}/${tableId}?pageSize=100${filterFormula}${offset ? '&offset=' + offset : ''}`;
     const res = await fetch(url, { headers: { Authorization: `Bearer ${AT_TOKEN}` } });
     const data = await res.json();
     records = records.concat(data.records.map(r => r.fields));
@@ -742,20 +770,29 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 
 // ── Main init ──
 async function init() {
+  // Populate crawl date picker with unique dates from Airtable
+  const allDates = await fetchUniqueDates();
+  if (allDates.length > 0) {
+    if (!selectedCrawlDate || !allDates.includes(selectedCrawlDate)) {
+      selectedCrawlDate = allDates[0];
+      localStorage.setItem('selected_crawl_date', selectedCrawlDate);
+    }
+    const picker = document.getElementById('crawl-date-picker');
+    picker.innerHTML = allDates.map(d => `<option value="${d}">${d}</option>`).join('');
+    picker.value = selectedCrawlDate;
+  }
+
   const [internal, pageTitles, metaDesc, h1, structuredData, sitemaps] = await Promise.all([
     fetchAll(TABLES.internal),
     fetchAll(TABLES.pageTitles),
     fetchAll(TABLES.metaDesc),
     fetchAll(TABLES.h1),
-    fetchAll(TABLES.structuredData),
+    fetchAll(TABLES.structuredData, false), // no Crawl Date field yet on this table
     fetchAll(TABLES.sitemaps)
   ]);
 
   document.getElementById('global-loading').style.display = 'none';
   document.querySelectorAll('.tab-panel').forEach(p => { if(p.id === 'panel-summary') p.classList.add('active'); });
-
-  const crawlDate = internal[0]?.['Crawl Date'] || '2026-05-05';
-  document.getElementById('crawl-date-display').textContent = crawlDate;
 
   // ── Derived data ──
   const htmlUrls = internal.filter(r => (r['Content Type'] || '').includes('text/html'));
@@ -1317,7 +1354,13 @@ if (localStorage.getItem(PW_KEY) === '1') {
 }
 
 document.getElementById('cache-clear-btn').addEventListener('click', () => {
-  Object.values(TABLES).forEach(id => localStorage.removeItem(cacheKey(id)));
+  Object.keys(localStorage).forEach(k => { if (k.startsWith('at_cache_')) localStorage.removeItem(k); });
+  location.reload();
+});
+
+document.getElementById('crawl-date-picker').addEventListener('change', function() {
+  localStorage.setItem('selected_crawl_date', this.value);
+  Object.keys(localStorage).forEach(k => { if (k.startsWith('at_cache_')) localStorage.removeItem(k); });
   location.reload();
 });
 
