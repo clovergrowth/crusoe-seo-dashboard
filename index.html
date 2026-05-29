@@ -519,6 +519,12 @@
       <div class="table-header"><span style="display:flex;align-items:center;gap:12px">Sitemap URLs <input class="table-search" id="sm-search" placeholder="Filter…" oninput="filterTable('sm-table', this.value)"></span><button onclick="exportTableCSV('sm-table','crusoe-sitemaps.csv')" style="background:var(--card2);border:1px solid var(--border);border-radius:50px;padding:6px 14px;color:var(--lime);font-family:'DM Sans',Arial,sans-serif;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.25s ease;white-space:nowrap" onmouseover="this.style.background='var(--lime)';this.style.color='var(--black)'" onmouseout="this.style.background='var(--card2)';this.style.color='var(--lime)'">↓ CSV</button></div>
       <div class="table-wrap"><table id="sm-table"></table></div>
     </div>
+    <div class="section-head" style="margin-top:32px"><h2>Orphan Pages</h2><p>Indexable HTML pages found by the crawl but <strong>not listed in any XML sitemap</strong> — these are invisible to search engines that rely on the sitemap for discovery</p></div>
+    <div id="orphan-empty" style="display:none;padding:24px 16px;color:var(--muted);font-size:13px;text-align:center">✅ No orphan pages detected — all indexable pages appear in the sitemap.</div>
+    <div class="table-card" id="orphan-card">
+      <div class="table-header"><span style="display:flex;align-items:center;gap:12px">Orphan Pages <input class="table-search" id="orphan-search" placeholder="Filter…" oninput="filterTable('orphan-table', this.value)"></span><button onclick="exportTableCSV('orphan-table','crusoe-orphan-pages.csv')" style="background:var(--card2);border:1px solid var(--border);border-radius:50px;padding:6px 14px;color:var(--lime);font-family:'DM Sans',Arial,sans-serif;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.25s ease;white-space:nowrap" onmouseover="this.style.background='var(--lime)';this.style.color='var(--black)'" onmouseout="this.style.background='var(--card2)';this.style.color='var(--lime)'">↓ CSV</button></div>
+      <div class="table-wrap"><table id="orphan-table"></table></div>
+    </div>
   </div>
 </div>
 
@@ -1333,16 +1339,28 @@ async function init() {
   const sm3xx = sitemaps.filter(r=>r['Status Code']>=300&&r['Status Code']<400).length;
   const sm4xx = sitemaps.filter(r=>r['Status Code']>=400&&r['Status Code']<500).length;
 
+  // ── ORPHAN DETECTION ── crawled indexable HTML pages missing from the sitemap
+  const smUrlSet = new Set(sitemaps.map(r => (r.Address||'').replace(/\/$/,'').toLowerCase()));
+  const orphans = internal.filter(r => {
+    const url = (r.Address||'').replace(/\/$/,'').toLowerCase();
+    return (r['Content Type']||'').includes('text/html')
+      && r['Status Code'] === 200
+      && r['Indexability'] === 'Indexable'
+      && !smUrlSet.has(url);
+  }).sort((a,b) => (+b.Inlinks||0) - (+a.Inlinks||0));
+
   document.getElementById('sm-scorecards').innerHTML = [
     scorecard('Sitemap URLs', fmt(sitemaps.length), 'lime', 'total entries'),
     scorecard('Indexable', fmt(smIndexable), 'lime', pct(smIndexable, sitemaps.length)),
     scorecard('Non-Indexable', fmt(smNonIndex), smNonIndex>0?'orange':'', 'in sitemap but non-indexable'),
     scorecard('4xx in Sitemap', fmt(sm4xx), sm4xx>0?'red':'', 'broken sitemap entries'),
+    scorecard('Orphan Pages', fmt(orphans.length), orphans.length>0?'orange':'', 'indexable, not in sitemap'),
   ].join('');
 
   document.getElementById('sm-charts').innerHTML = [
     chartCard('chart-sm-index', 'Sitemap Indexability'),
     chartCard('chart-sm-status', 'Sitemap Status Codes'),
+    chartCard('chart-sm-orphan', 'Sitemap Coverage'),
   ].join('');
 
   makeChart('chart-sm-index', { type: 'doughnut', data: {
@@ -1353,6 +1371,11 @@ async function init() {
   makeChart('chart-sm-status', { type: 'doughnut', data: {
     labels: ['2xx', '3xx', '4xx'],
     datasets: [{ data: [sm2xx, sm3xx, sm4xx], backgroundColor: [GREEN, BLUE, RED], borderWidth:2, borderColor:'#111' }]
+  }, options: { plugins:{legend:{position:'bottom'}}, cutout:'60%' } });
+
+  makeChart('chart-sm-orphan', { type: 'doughnut', data: {
+    labels: ['In Sitemap', 'Orphan (missing)'],
+    datasets: [{ data: [smIndexable, orphans.length], backgroundColor: [LIME, ORANGE], borderWidth:2, borderColor:'#111' }]
   }, options: { plugins:{legend:{position:'bottom'}}, cutout:'60%' } });
 
   buildTable(document.querySelector('#sm-table'), ['URL','Status','Indexability','Content Type'],
@@ -1368,6 +1391,22 @@ async function init() {
     { label: '3xx — Redirect',  fn: r => { const c = +r.cells[1]?.textContent.trim(); return c >= 300 && c < 400; } },
     { label: '4xx — Error',     fn: r => { const c = +r.cells[1]?.textContent.trim(); return c >= 400 && c < 500; } },
   ]);
+
+  // ── ORPHAN TABLE ──
+  if (orphans.length === 0) {
+    document.getElementById('orphan-empty').style.display = 'block';
+    document.getElementById('orphan-card').style.display = 'none';
+  } else {
+    document.getElementById('orphan-empty').style.display = 'none';
+    document.getElementById('orphan-card').style.display = '';
+    buildTable(document.querySelector('#orphan-table'), ['URL','Inlinks','Crawl Depth','Status'],
+      orphans.slice(0,500), r => `<tr>
+        <td title="${r.Address}">${r.Address}</td>
+        <td>${r.Inlinks||0}</td>
+        <td>${r['Crawl Depth']??'—'}</td>
+        <td>${statusBadge(r['Status Code'])}</td>
+      </tr>`);
+  }
 }
 
 window.filterTable = filterTable;
